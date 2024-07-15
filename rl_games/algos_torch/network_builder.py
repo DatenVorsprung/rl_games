@@ -841,13 +841,11 @@ class A2CResnetBuilder(NetworkBuilder):
 
 class DiagGaussianActor(NetworkBuilder.BaseNetwork):
     """torch.distributions implementation of an diagonal Gaussian policy."""
-    def __init__(self, output_dim, log_std_bounds, mlp_args, cnn=None):
+    def __init__(self, output_dim, log_std_bounds, mlp_args, cnn):
         super().__init__()
 
         self.log_std_bounds = log_std_bounds
 
-        if cnn is None:
-            cnn = nn.Sequential()
         mlp = self._build_mlp(**mlp_args)
         self.trunk = nn.Sequential(cnn, nn.Flatten(0), mlp)
         last_layer = list(mlp.children())[-2].out_features
@@ -872,17 +870,19 @@ class DiagGaussianActor(NetworkBuilder.BaseNetwork):
 
 
 class DoubleQCritic(NetworkBuilder.BaseNetwork):
-    """Critic network, employes double Q-learning."""
-    def __init__(self, output_dim, **mlp_args):
+    """Critic network, employs double Q-learning."""
+    def __init__(self, output_dim, mlp_args, cnn):
         super().__init__()
 
-        self.Q1 = self._build_mlp(**mlp_args)
-        last_layer = list(self.Q1.children())[-2].out_features
-        self.Q1 = nn.Sequential(*list(self.Q1.children()), nn.Linear(last_layer, output_dim))
+        Q1_mlp = self._build_mlp(**mlp_args)
+        Q1_trunk = nn.Sequential(cnn, nn.Flatten(0), Q1_mlp)
+        last_layer = list(Q1_mlp.children())[-2].out_features
+        self.Q1 = nn.Sequential(*list(Q1_trunk.children()), nn.Linear(last_layer, output_dim))
 
-        self.Q2 = self._build_mlp(**mlp_args)
-        last_layer = list(self.Q2.children())[-2].out_features
-        self.Q2 = nn.Sequential(*list(self.Q2.children()), nn.Linear(last_layer, output_dim))
+        Q2_mlp = self._build_mlp(**mlp_args)
+        Q2_trunk = nn.Sequential(cnn, nn.Flatten(0), Q2_mlp)
+        last_layer = list(Q2_mlp.children())[-2].out_features
+        self.Q2 = nn.Sequential(*list(Q2_trunk.children()), nn.Linear(last_layer, output_dim))
 
     def forward(self, obs, action):
         assert obs.size(0) == action.size(0)
@@ -957,9 +957,11 @@ class SACBuilder(NetworkBuilder):
 
             if self.separate:
                 print("Building Critic")
-                self.critic = self._build_critic(1, **critic_mlp_args)
+                self.critic = self._build_critic(1, critic_mlp_args,
+                                                 cnn_feature_extractor)
                 print("Building Critic Target")
-                self.critic_target = self._build_critic(1, **critic_mlp_args)
+                self.critic_target = self._build_critic(1, critic_mlp_args,
+                                                        cnn_feature_extractor)
                 self.critic_target.load_state_dict(self.critic.state_dict())  
 
             mlp_init = self.init_factory.create(**self.initializer)
@@ -975,10 +977,10 @@ class SACBuilder(NetworkBuilder):
                     if getattr(m, "bias", None) is not None:
                         torch.nn.init.zeros_(m.bias)
 
-        def _build_critic(self, output_dim, **mlp_args):
-            return DoubleQCritic(output_dim, **mlp_args)
+        def _build_critic(self, output_dim, mlp_args, cnn):
+            return DoubleQCritic(output_dim, mlp_args, cnn)
 
-        def _build_actor(self, output_dim, log_std_bounds, mlp_args, cnn=None):
+        def _build_actor(self, output_dim, log_std_bounds, mlp_args, cnn):
             return DiagGaussianActor(output_dim, log_std_bounds, mlp_args, cnn)
 
         def forward(self, obs_dict):
