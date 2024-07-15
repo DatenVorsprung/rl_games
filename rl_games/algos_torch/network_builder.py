@@ -875,21 +875,22 @@ class DoubleQCritic(NetworkBuilder.BaseNetwork):
         super().__init__()
 
         Q1_mlp = self._build_mlp(**mlp_args)
-        Q1_trunk = nn.Sequential(cnn, nn.Flatten(1), Q1_mlp)
+        self.Q1_cnn = nn.Sequential(cnn, nn.Flatten(1))
         last_layer = list(Q1_mlp.children())[-2].out_features
-        self.Q1 = nn.Sequential(*list(Q1_trunk.children()), nn.Linear(last_layer, output_dim))
+        self.Q1 = nn.Sequential(*list(Q1_mlp.children()), nn.Linear(last_layer, output_dim))
 
         Q2_mlp = self._build_mlp(**mlp_args)
-        Q2_trunk = nn.Sequential(cnn, nn.Flatten(1), Q2_mlp)
+        self.Q2_cnn = nn.Sequential(cnn, nn.Flatten(1))
         last_layer = list(Q2_mlp.children())[-2].out_features
-        self.Q2 = nn.Sequential(*list(Q2_trunk.children()), nn.Linear(last_layer, output_dim))
+        self.Q2 = nn.Sequential(*list(Q2_mlp.children()), nn.Linear(last_layer, output_dim))
 
     def forward(self, obs, action):
         assert obs.size(0) == action.size(0)
 
-        obs_action = torch.cat([obs, action], dim=-1)
-        q1 = self.Q1(obs_action)
-        q2 = self.Q2(obs_action)
+        obs_action_Q1 = torch.cat([self.Q1_cnn(obs), action], dim=-1)
+        obs_action_Q2 = torch.cat([self.Q2_cnn(obs), action], dim=-1)
+        q1 = self.Q1(obs_action_Q1)
+        q2 = self.Q2(obs_action_Q2)
 
         return q1, q2
 
