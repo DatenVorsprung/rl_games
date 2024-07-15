@@ -55,12 +55,11 @@ class SACAgent(BaseAlgorithm):
             float(self.env_info['action_space'].high.max())
         ]
 
-        obs_shape = torch_ext.shape_whc_to_cwh(self.obs_shape)
         net_config = {
             'obs_dim': self.env_info["observation_space"].shape[0],
             'action_dim': self.env_info["action_space"].shape[0],
             'actions_num' : self.actions_num,
-            'input_shape' : obs_shape,
+            'input_shape' : self.obs_shape,
             'normalize_input': self.normalize_input,
         }
         self.model = self.network.build(net_config)
