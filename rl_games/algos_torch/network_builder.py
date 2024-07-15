@@ -841,13 +841,16 @@ class A2CResnetBuilder(NetworkBuilder):
 
 class DiagGaussianActor(NetworkBuilder.BaseNetwork):
     """torch.distributions implementation of an diagonal Gaussian policy."""
-    def __init__(self, output_dim, log_std_bounds, **mlp_args):
+    def __init__(self, output_dim, log_std_bounds, mlp_args, cnn=None):
         super().__init__()
 
         self.log_std_bounds = log_std_bounds
 
-        self.trunk = self._build_mlp(**mlp_args)
-        last_layer = list(self.trunk.children())[-2].out_features
+        if cnn is None:
+            cnn = nn.Sequential()
+        mlp = self._build_mlp(**mlp_args)
+        self.trunk = nn.Sequential(cnn, nn.Flatten(0), mlp)
+        last_layer = list(mlp.children())[-2].out_features
         self.trunk = nn.Sequential(*list(self.trunk.children()), nn.Linear(last_layer, output_dim))
 
     def forward(self, obs):
@@ -912,8 +915,25 @@ class SACBuilder(NetworkBuilder):
             NetworkBuilder.BaseNetwork.__init__(self)
             self.load(params)
 
+            if self.has_cnn:
+                if self.permute_input:
+                    input_shape = torch_ext.shape_whc_to_cwh(input_shape)
+                cnn_args = {
+                    'ctype' : self.cnn['type'],
+                    'input_shape' : input_shape,
+                    'convs' :self.cnn['convs'],
+                    'activation' : self.cnn['activation'],
+                    'norm_func_name' : self.normalization,
+                }
+                cnn_feature_extractor = self._build_conv(**cnn_args)
+
+                mlp_input_size = self._calc_input_size(input_shape, cnn_feature_extractor)
+            else:
+                cnn_feature_extractor = nn.Sequential()
+                mlp_input_size = obs_dim
+
             actor_mlp_args = {
-                'input_size' : obs_dim, 
+                'input_size' : mlp_input_size,
                 'units' : self.units, 
                 'activation' : self.activation, 
                 'norm_func_name' : self.normalization,
@@ -923,7 +943,7 @@ class SACBuilder(NetworkBuilder):
             }
 
             critic_mlp_args = {
-                'input_size' : obs_dim + action_dim, 
+                'input_size' : mlp_input_size + action_dim,
                 'units' : self.units, 
                 'activation' : self.activation, 
                 'norm_func_name' : self.normalization,
@@ -932,7 +952,8 @@ class SACBuilder(NetworkBuilder):
                 'norm_only_first_layer' : self.norm_only_first_layer
             }
             print("Building Actor")
-            self.actor = self._build_actor(2*action_dim, self.log_std_bounds, **actor_mlp_args)
+            self.actor = self._build_actor(2*action_dim, self.log_std_bounds, actor_mlp_args,
+                                           cnn_feature_extractor)
 
             if self.separate:
                 print("Building Critic")
@@ -942,6 +963,8 @@ class SACBuilder(NetworkBuilder):
                 self.critic_target.load_state_dict(self.critic.state_dict())  
 
             mlp_init = self.init_factory.create(**self.initializer)
+            if self.has_cnn:
+                cnn_init = self.init_factory.create(**self.cnn['initializer'])
             for m in self.modules():
                 if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv1d):
                     cnn_init(m.weight)
@@ -955,8 +978,8 @@ class SACBuilder(NetworkBuilder):
         def _build_critic(self, output_dim, **mlp_args):
             return DoubleQCritic(output_dim, **mlp_args)
 
-        def _build_actor(self, output_dim, log_std_bounds, **mlp_args):
-            return DiagGaussianActor(output_dim, log_std_bounds, **mlp_args)
+        def _build_actor(self, output_dim, log_std_bounds, mlp_args, cnn=None):
+            return DiagGaussianActor(output_dim, log_std_bounds, mlp_args, cnn)
 
         def forward(self, obs_dict):
             """TODO"""
@@ -992,4 +1015,11 @@ class SACBuilder(NetworkBuilder):
             else:
                 self.is_discrete = False
                 self.is_continuous = False
+
+            if 'cnn' in params:
+                self.has_cnn = True
+                self.cnn = params['cnn']
+                self.permute_input = self.cnn.get('permute_input', True)
+            else:
+                self.has_cnn = False
 
