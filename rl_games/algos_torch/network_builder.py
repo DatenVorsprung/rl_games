@@ -847,7 +847,7 @@ class DiagGaussianActor(NetworkBuilder.BaseNetwork):
         self.log_std_bounds = log_std_bounds
 
         mlp = self._build_mlp(**mlp_args)
-        self.trunk = nn.Sequential(cnn, nn.Flatten(0), mlp)
+        self.trunk = nn.Sequential(cnn, nn.Flatten(1), mlp)
         last_layer = list(mlp.children())[-2].out_features
         self.trunk = nn.Sequential(*list(self.trunk.children()), nn.Linear(last_layer, output_dim))
 
@@ -875,12 +875,12 @@ class DoubleQCritic(NetworkBuilder.BaseNetwork):
         super().__init__()
 
         Q1_mlp = self._build_mlp(**mlp_args)
-        Q1_trunk = nn.Sequential(cnn, nn.Flatten(0), Q1_mlp)
+        Q1_trunk = nn.Sequential(cnn, nn.Flatten(1), Q1_mlp)
         last_layer = list(Q1_mlp.children())[-2].out_features
         self.Q1 = nn.Sequential(*list(Q1_trunk.children()), nn.Linear(last_layer, output_dim))
 
         Q2_mlp = self._build_mlp(**mlp_args)
-        Q2_trunk = nn.Sequential(cnn, nn.Flatten(0), Q2_mlp)
+        Q2_trunk = nn.Sequential(cnn, nn.Flatten(1), Q2_mlp)
         last_layer = list(Q2_mlp.children())[-2].out_features
         self.Q2 = nn.Sequential(*list(Q2_trunk.children()), nn.Linear(last_layer, output_dim))
 
